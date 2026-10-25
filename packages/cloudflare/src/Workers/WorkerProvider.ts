@@ -763,6 +763,17 @@ const cachedWorkerId = (value: string | undefined, scriptName: string): string |
     ? value
     : undefined;
 
+/**
+ * Whether `output` is a precreate stub that uploaded nothing: a version,
+ * preview, or dispatch-namespace worker's provisional row (`workerId: ""`).
+ * Its `workerName` names no script this resource wrote. Without a recorded
+ * namespace it can't even say which endpoint the attempt targeted — a
+ * dispatch stub's namespace may still have been unresolved — so the
+ * account-level script of that name proves nothing (#2533).
+ */
+const isUnscopedStub = (output: Worker["Attributes"]): boolean =>
+  output.workerId === "" && !output.namespace;
+
 export class WorkerIdNotFound extends Data.TaggedError("WorkerIdNotFound")<{
   scriptName: string;
   message: string;
@@ -1571,7 +1582,10 @@ export const LiveWorkerProvider = () =>
         for (const zoneId of zoneIds) {
           const entrypoint = yield* rulesets
             .getPhasForZone({ zoneId, rulesetPhase: "http_request_dynamic_redirect" })
-            .pipe(Effect.orElseSucceed(() => undefined));
+            // Only a missing entrypoint means no rules yet. Any other failure must
+            // stop here: the PUT below replaces the whole phase, so reading it as
+            // empty would delete every other rule in the zone.
+            .pipe(Effect.catchTag("RulesetNotFound", () => Effect.succeed(undefined)));
           const existingRules = entrypoint?.rules ?? [];
           const ourDesired = desired
             .filter((hostname) => params.zoneIdByHostname.get(hostname) === zoneId)
@@ -1661,7 +1675,10 @@ export const LiveWorkerProvider = () =>
               : [];
           const entrypoint = yield* rulesets
             .getPhasForZone({ zoneId, rulesetPhase: "http_request_late_transform" })
-            .pipe(Effect.orElseSucceed(() => undefined));
+            // Only a missing entrypoint means no rules yet. Any other failure must
+            // stop here: the PUT below replaces the whole phase, so reading it as
+            // empty would delete every other rule in the zone.
+            .pipe(Effect.catchTag("RulesetNotFound", () => Effect.succeed(undefined)));
           const existingRules = entrypoint?.rules ?? [];
           const isOurs = (rule: { description?: string | null }) =>
             (rule.description ?? "").startsWith(prefix);
@@ -4418,9 +4435,10 @@ export const LiveWorkerProvider = () =>
                       ? [
                           {
                             accountId,
-                            // Practically always present; an empty value
-                            // is healed by the per-script read.
-                            workerId: script.tag ?? "",
+                            // Practically always present. Fall back to the
+                            // name (healed by the per-script read), never
+                            // the "" that marks an unuploaded stub.
+                            workerId: script.tag ?? script.id,
                             workerName: script.id,
                             namespace: undefined,
                             logpush: script.logpush ?? undefined,
@@ -4661,6 +4679,31 @@ export const LiveWorkerProvider = () =>
             }
           }
         }),
+        observe: Effect.fn(function* ({ id, news }) {
+          // The script precreate (or, for a dispatch-namespace worker,
+          // reconcile) writes to. A version/preview worker uploads to its
+          // parent's script and claims none of its own.
+          if (news.version?.parent != null || news.preview?.of != null) return undefined;
+          // Neither name nor namespace can be checked until it resolves.
+          if (!isResolved(news.name) || !isResolved(news.namespace)) return undefined;
+          const { accountId } = yield* yield* CloudflareEnvironment;
+          const name = yield* createWorkerName(id, news.name);
+          const settings = yield* getScriptSettings(
+            accountId,
+            name,
+            resolveNamespaceName(news.namespace),
+          ).pipe(
+            Effect.catchTags({
+              WorkerNotFound: () => Effect.succeed(undefined),
+              WorkerHasNoVersions: () => Effect.succeed(undefined),
+              DispatchNamespaceScriptNotFound: () => Effect.succeed(undefined),
+              DispatchNamespaceNotFound: () => Effect.succeed(undefined),
+            }),
+          );
+          if (settings === undefined) return undefined;
+          const observed = { workerName: name };
+          return hasAlchemyWorkerTags(id, settings.tags ?? []) ? observed : Unowned(observed);
+        }),
         precreate: Effect.fn(function* ({ id, news, session, bindings }) {
           const { accountId } = yield* yield* CloudflareEnvironment;
           yield* assertCloudflareTelemetryCompatibility(news as WorkerProps, bindings);
@@ -4712,7 +4755,11 @@ export const LiveWorkerProvider = () =>
               // workers are dispatched by name, never bound circularly).
               workerId: "",
               workerName: name,
-              namespace: typeof news.namespace === "string" ? news.namespace : undefined,
+              // Recorded only once resolved: cleanup deletes from this
+              // namespace, and must not fall back to the account endpoint.
+              namespace: isResolved(news.namespace)
+                ? resolveNamespaceName(news.namespace)
+                : undefined,
               logpush: undefined,
               url: undefined,
               tags: undefined,
@@ -4793,8 +4840,8 @@ export const LiveWorkerProvider = () =>
           let placeholder: { tag?: string | null } | undefined;
           if (existingSettings) {
             // Engine has already cleared this resource for write via
-            // `read` + AdoptPolicy. Either we own it (matching tags) or
-            // the user opted in to a takeover (`--adopt` / `adopt(true)`).
+            // `observe` or `read` + AdoptPolicy. Either we own it (matching
+            // tags) or the user opted in to a takeover (`--adopt` / `adopt(true)`).
             yield* Effect.logInfo(`Cloudflare Worker precreate: reusing existing ${name}`);
           } else {
             yield* session.note("Pre-creating worker...", { kind: "status" });
@@ -4952,6 +4999,11 @@ export const LiveWorkerProvider = () =>
                     Effect.succeed(undefined),
                   ),
                 );
+            }
+            if (output !== undefined && isUnscopedStub(output)) {
+              // Nothing was uploaded, and the endpoint it would have been
+              // uploaded to is unknown — there is nothing to observe.
+              return undefined;
             }
             const workerName = output?.workerName ?? (yield* createWorkerName(id, olds?.name));
             const dispatchNamespace = output?.namespace ?? resolveNamespaceName(olds?.namespace);
@@ -5303,6 +5355,12 @@ export const LiveWorkerProvider = () =>
             yield* workers
               .deletePreview({ accountId: output.accountId, workerId: output.previewOf, previewId })
               .pipe(Effect.catchTag(["PreviewNotFound", "WorkerNotFound"], () => Effect.void));
+            return;
+          }
+          if (isUnscopedStub(output)) {
+            yield* Effect.logWarning(
+              `Cloudflare Worker delete: ${output.workerName} was never uploaded, or its dispatch namespace was never recorded; skipping. An interrupted upload into a dispatch namespace may need manual cleanup.`,
+            );
             return;
           }
           yield* Effect.logInfo(`Cloudflare Worker delete: deleting ${output.workerName}`);

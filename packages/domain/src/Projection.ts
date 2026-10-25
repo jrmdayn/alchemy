@@ -85,8 +85,11 @@ export type InputOf<P extends Any> = Input<
 export type Identifier<P extends Any> = P extends Context.Key<infer I, unknown> ? I : never;
 
 /** The requirement identifier of a projection's progress service. */
-export type ProgressIdentifier<P extends Any> =
-  P["Progress"] extends Context.Key<infer I, unknown> ? I : never;
+export type ProgressIdentifier<P extends Any> = P extends Any
+  ? P["Progress"] extends Context.Key<infer I, unknown>
+    ? I
+    : never
+  : never;
 
 /**
  * A projection's progress, provided by the hosted model.
@@ -94,13 +97,15 @@ export type ProgressIdentifier<P extends Any> =
 export interface Progress {
   /**
    * Wait until the projection has handled every event of a command that it
-   * consumes, so a read of your store sees that write.
+   * consumes, so a read of your store sees that write. Without `events` (a
+   * client's receipt carries only `stream` and `version`), the command's
+   * events are read from its aggregate.
    */
   readonly caughtUp: (
     receipt: {
       readonly stream: string;
       readonly version: number;
-      readonly events: ReadonlyArray<unknown>;
+      readonly events?: ReadonlyArray<unknown>;
     },
     options?: { readonly timeout?: Duration.Input },
   ) => Effect.Effect<void, View.ConsistencyTimeout>;
