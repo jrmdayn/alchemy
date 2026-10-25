@@ -2,7 +2,7 @@ import * as Domain from "@alchemy.run/domain";
 import { Bank, BankHandlers } from "@bank/domain/Bank.model";
 import { CustomerId } from "@bank/domain/Customer/Customer.id";
 import { CustomerApi } from "@bank/domain/CustomerApi.api";
-import { LedgerStore, MemoryLedgerStore, memoryLedger } from "@bank/domain/Ledger/LedgerStore";
+import { type LedgerRow, LedgerStore, MemoryLedgerStore, memoryLedger } from "@bank/domain/Ledger/LedgerStore";
 import { sessionClient } from "@bank/domain/Session.middleware";
 import { NodeFileSystem } from "@effect/platform-node";
 import { LibsqlClient } from "@effect/sql-libsql";
@@ -214,7 +214,7 @@ const onServer = (
           const writing = yield* Deferred.make<void>();
           const stuck = Layer.succeed(LedgerStore, {
             record: () => Deferred.succeed(writing, undefined).pipe(Effect.andThen(Effect.never)),
-            forAccount: () => Effect.succeed([]),
+            forAccount: () => Effect.succeed({ entries: [], cursor: null }),
           });
           const accountId = yield* onHost(
             database,
@@ -234,11 +234,20 @@ const onServer = (
           expect(Number(pending[0]!.n)).toBeGreaterThan(0);
 
           // Host B picks the run up from its timer, and finishes all work.
-          const ledger = memoryLedger();
+          // A memory ledger that also keeps what host B's projection writes, to read it back.
+          const written: Array<LedgerRow> = [];
+          const ledger = Layer.effect(
+            LedgerStore,
+            Effect.map(LedgerStore, (store) => ({
+              ...store,
+              record: (rows: ReadonlyArray<LedgerRow>) =>
+                store.record(rows).pipe(Effect.tap(() => Effect.sync(() => void written.push(...rows)))),
+            })),
+          ).pipe(Layer.provide(memoryLedger()));
           yield* onHost(
             database,
             Effect.gen(function* () {
-              const rows = yield* ledger.forAccount(accountId).pipe(
+              const rows = yield* Effect.sync(() => written.filter((row) => row.accountId === accountId)).pipe(
                 Effect.repeat({
                   schedule: Schedule.spaced("200 millis"),
                   until: (rows) => rows.some((row) => row.amount === 80),
@@ -254,7 +263,7 @@ const onServer = (
                 }),
               );
             }),
-            ledger.layer,
+            ledger,
           );
           const left = yield* query<{ n: string }>("SELECT count(*) AS n FROM domain_timer");
           expect(Number(left[0]!.n)).toBe(0);
