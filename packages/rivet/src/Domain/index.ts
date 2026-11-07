@@ -18,6 +18,8 @@ import {
   type Stub,
 } from "@alchemy.run/domain/DurableObjects";
 import type { Platform } from "@alchemy.run/domain/Platform";
+import type { Input } from "alchemy/Input";
+import * as Output from "alchemy/Output";
 import { entrypointLayer, entrypointTag } from "alchemy/Runtime/Bootstrap";
 import { RuntimeContext } from "alchemy/RuntimeContext";
 import { makeDurableObjectEngine } from "alchemy/Workers/DurableObjectEngine";
@@ -28,6 +30,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as Scope from "effect/Scope";
 import type { WorkflowEngine } from "effect/workflow";
 import {
@@ -218,6 +221,13 @@ export interface LayerOptions<PoolReq> {
   readonly handler?: string;
   /** The pool whose nodes run the model, e.g. `RivetDocker.SwarmPool("Default")`. */
   readonly pool: Layer.Layer<PoolHost, never, PoolReq>;
+  /**
+   * Environment variables the pool's nodes get, for the model's adapters to
+   * read with `Config` there: a projection's database URL, an API key. A
+   * value may be another resource's output. A `Redacted` value reaches the
+   * nodes as its plain text, which `Config.Redacted` reads back.
+   */
+  readonly env?: Record<string, Input<string | Redacted.Redacted<string>>>;
 }
 
 /**
@@ -225,8 +235,24 @@ export interface LayerOptions<PoolReq> {
  * object its name says (`Bank.AccountAggregate/a-1`) from the classes the
  * model declared on this node.
  */
-const hostClassPhase = (name: string, classes: ReadonlyMap<string, InstanceBuild>) =>
+const hostClassPhase = (
+  name: string,
+  classes: ReadonlyMap<string, InstanceBuild>,
+  env: LayerOptions<never>["env"] = {},
+) =>
   Effect.gen(function* () {
+    if (!globalThis.__ALCHEMY_RUNTIME__) {
+      // Bound while deploying, so the pool gives them to its nodes.
+      const ctx = yield* RuntimeContext;
+      for (const [key, value] of Object.entries(env)) {
+        yield* ctx.set(
+          key,
+          Output.map(Output.isOutput(value) ? value : Output.literal(value), (resolved) =>
+            Redacted.isRedacted(resolved) ? Redacted.value(resolved) : resolved,
+          ),
+        );
+      }
+    }
     // Each instance gets Cloudflare's input gate: the objects' storage was
     // written for it.
     yield* Layer.buildWithScope(InputGate, yield* Scope.make());
@@ -331,7 +357,7 @@ export const layer = <PoolReq>(
       const Objects = (DurableObject as any)()(
         options.name,
         { main: options.main, handler: options.handler ?? "default" },
-        hostClassPhase(options.name, classes).pipe(Effect.provide(options.pool)),
+        hostClassPhase(options.name, classes, options.env).pipe(Effect.provide(options.pool)),
       );
       if (NodeHost.active) {
         // A node of the pool: host the class, as the bootstrap hosts an
