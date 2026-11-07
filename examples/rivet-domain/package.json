@@ -1,0 +1,34 @@
+{
+  "name": "rivet-domain",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alchemy-run/alchemy.git",
+    "directory": "examples/rivet-domain"
+  },
+  "type": "module",
+  "scripts": {
+    "deploy:docker": "alchemy deploy --config alchemy.docker.ts",
+    "destroy:docker": "alchemy destroy --config alchemy.docker.ts",
+    "deploy:gcp": "alchemy deploy --config alchemy.gcp.ts",
+    "destroy:gcp": "alchemy destroy --config alchemy.gcp.ts",
+    "demo": "bun scripts/demo.ts"
+  },
+  "dependencies": {
+    "@alchemy.run/docker": "workspace:*",
+    "@alchemy.run/domain": "workspace:*",
+    "@alchemy.run/gcp": "workspace:*",
+    "@alchemy.run/rivet": "workspace:*",
+    "@bank/domain": "workspace:*",
+    "@bank/server": "workspace:*",
+    "@effect/ai-anthropic": "4.1.0",
+    "alchemy": "workspace:*",
+    "effect": "catalog:",
+    "pg": "catalog:"
+  },
+  "devDependencies": {
+    "@types/pg": "catalog:"
+  }
+}

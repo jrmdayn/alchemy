@@ -9178,6 +9178,43 @@ importers:
         specifier: 'catalog:'
         version: 8.3.5(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.15)(yaml@2.9.1)
 
+  examples/rivet-domain:
+    dependencies:
+      '@alchemy.run/docker':
+        specifier: workspace:*
+        version: link:../../packages/docker
+      '@alchemy.run/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@alchemy.run/gcp':
+        specifier: workspace:*
+        version: link:../../packages/gcp
+      '@alchemy.run/rivet':
+        specifier: workspace:*
+        version: link:../../packages/rivet
+      '@bank/domain':
+        specifier: workspace:*
+        version: link:../cloudflare-domain/packages/domain
+      '@bank/server':
+        specifier: workspace:*
+        version: link:../cloudflare-domain/packages/server
+      '@effect/ai-anthropic':
+        specifier: 4.1.0
+        version: 4.1.0(effect@4.1.0)
+      alchemy:
+        specifier: workspace:*
+        version: link:../../packages/alchemy
+      effect:
+        specifier: 4.1.0
+        version: 4.1.0
+      pg:
+        specifier: 'catalog:'
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: 'catalog:'
+        version: 8.20.4
+
   examples/rivet-rooms:
     dependencies:
       '@alchemy.run/docker':
@@ -15277,6 +15314,11 @@ packages:
   '@earendil-works/pi-telemetry@1.3.0':
     resolution: {integrity: sha512-ERGZr+aXjNJzoUbB7ZzHVH3g5otzMHjHLs2Fyizm12By5X+gBEhod9cJXFOk13S7M8a29Am+Mq21zm73mRJFLg==}
     engines: {node: '>=22.19.0'}
+
+  '@effect/ai-anthropic@4.1.0':
+    resolution: {integrity: sha512-ibl/tCXP1Fah+UmyvUCy0ZbxNgnnrbjqXbvKJUP9Sc4C03Vt2NmlN5MKujD6wGFGYPfsgAswAHp0VmeL2y2F2A==}
+    peerDependencies:
+      effect: 4.1.0
 
   '@effect/atom-react@4.1.0':
     resolution: {integrity: sha512-PeaBDmwqG9BPQfaPHeWCB2NF4NQaFlI6poKxjlBHMrMjKqV+LVBdryhpDNqSZOhqGgT+qnh9gV+19MYjNOQ+bg==}
@@ -32024,6 +32066,10 @@ snapshots:
     optional: true
 
   '@earendil-works/pi-telemetry@1.3.0': {}
+
+  '@effect/ai-anthropic@4.1.0(effect@4.1.0)':
+    dependencies:
+      effect: 4.1.0
 
   '@effect/atom-react@4.1.0(effect@4.1.0)(react@19.3.1)(scheduler@0.28.0)':
     dependencies:

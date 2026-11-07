@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["alchemy.docker.ts", "alchemy.gcp.ts", "src/**/*.ts", "scripts/**/*.ts"],
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "target": "ESNext"
+  },
+  "references": [
+    { "path": "../../packages/alchemy/tsconfig.json" },
+    { "path": "../../packages/domain/tsconfig.json" },
+    { "path": "../../packages/docker/tsconfig.json" },
+    { "path": "../../packages/gcp/tsconfig.json" },
+    { "path": "../../packages/rivet/tsconfig.json" }
+  ]
+}

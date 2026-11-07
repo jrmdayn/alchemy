@@ -317,6 +317,9 @@
       "path": "./examples/cloudflare-domain/tsconfig.json"
     },
     {
+      "path": "./examples/rivet-domain/tsconfig.json"
+    },
+    {
       "path": "./examples/cloudflare-static-site/tsconfig.json"
     },
     {
